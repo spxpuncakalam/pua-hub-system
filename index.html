@@ -150,9 +150,15 @@
 
         // --- CONFIGURATION ---
         // These variables are provided by the environment. Do not change them.
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'shopee-hub-default';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+const firebaseConfig = {
+  apiKey: "AIzaSyABPOtifWKQaera7AragOseptGw_-CnFJA",
+  authDomain: "spx-puncak-alam-hub.firebaseapp.com",
+  projectId: "spx-puncak-alam-hub",
+  storageBucket: "spx-puncak-alam-hub.firebasestorage.app",
+  messagingSenderId: "893783079973",
+  appId: "1:893783079973:web:8a09df2ee640c02a3d93cc",
+  measurementId: "G-24041L1LWL"
+};
 
         // --- INITIALIZATION ---
         let app, auth, db;
