@@ -191,6 +191,21 @@
             const auth = getAuth(app);
             const db = getFirestore(app);
 
+            // --- AUTHENTICATION HANDLER ---
+            const handleAuthentication = async () => {
+                try {
+                    // Use custom token if available, otherwise sign in anonymously
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Authentication failed:", error);
+                    loadingView.innerHTML = `<p class="text-red-600">Authentication failed: ${error.message}</p>`;
+                }
+            };
+
             // --- AUTH STATE LISTENER ---
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
@@ -230,20 +245,6 @@
                     await handleAuthentication();
                 }
             });
-
-            // --- AUTHENTICATION HANDLER ---
-            const handleAuthentication = async () => {
-                try {
-                    if (initialAuthToken) {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                } catch (error) {
-                    console.error("Authentication failed:", error);
-                    loadingView.innerHTML = `<p class="text-red-600">Authentication failed: ${error.message}</p>`;
-                }
-            };
             
             // --- LOGOUT ---
             logoutButton.addEventListener('click', async () => {
