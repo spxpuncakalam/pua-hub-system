@@ -27,6 +27,9 @@
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
         }
         /* Custom scrollbar for the table */
+        .table-container {
+            max-height: 60vh; /* Set a max height for the table container */
+        }
         .table-container::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -44,7 +47,7 @@
         /* Loading spinner */
         .loader {
             border: 4px solid #f3f3f3;
-            border-top: 4px solid #fb923c;
+            border-top: 4px solid #fb923c; /* Shopee Orange */
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -53,6 +56,12 @@
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+        /* Sticky header for table */
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
     </style>
 </head>
@@ -79,10 +88,10 @@
                         </div>
                         <div class="flex items-center">
                             <div class="text-right mr-4">
-                                <p id="user-id" class="text-sm font-medium text-gray-800"></p>
+                                <p id="user-id" class="text-sm font-medium text-gray-800" title="Full User ID"></p>
                                 <p id="user-role" class="text-xs text-gray-500 capitalize"></p>
                             </div>
-                            <button id="logout-button" class="p-2 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500">
+                            <button id="logout-button" title="Logout" class="p-2 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500">
                                 <span class="material-symbols-outlined">logout</span>
                             </button>
                         </div>
@@ -121,7 +130,7 @@
                     </div>
 
                     <!-- Data Table -->
-                    <div id="table-container" class="overflow-x-auto table-container">
+                    <div id="table-container" class="overflow-auto table-container">
                         <p id="loading-state" class="text-center py-8 text-gray-500">Loading parcel data...</p>
                         <table id="parcel-table" class="min-w-full divide-y divide-gray-200 hidden">
                             <thead class="bg-gray-50">
@@ -143,41 +152,12 @@
 
     <!-- Firebase SDK -->
     <script type="module">
-        // Import Firebase modules
+        // Import Firebase functions
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, collection, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- CONFIGURATION ---
-        // These variables are provided by the environment. Do not change them.
-const firebaseConfig = {
-  apiKey: "AIzaSyABPOtifWKQaera7AragOseptGw_-CnFJA",
-  authDomain: "spx-puncak-alam-hub.firebaseapp.com",
-  projectId: "spx-puncak-alam-hub",
-  storageBucket: "spx-puncak-alam-hub.firebasestorage.app",
-  messagingSenderId: "893783079973",
-  appId: "1:893783079973:web:8a09df2ee640c02a3d93cc",
-  measurementId: "G-24041L1LWL"
-};
-
-        // --- INITIALIZATION ---
-        let app, auth, db;
-        try {
-            app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-        } catch (e) {
-            console.error("Firebase initialization failed:", e);
-            document.getElementById('loading-view').innerHTML = '<p class="text-red-600">Error: Could not initialize the system. Please check the console.</p>';
-        }
-        
-
-        // --- STATE MANAGEMENT ---
-        let currentUser = null;
-        let allParcels = [];
-        let parcelHeaders = [];
-
-        // --- DOM ELEMENTS ---
+        // --- GLOBAL VARIABLES & CONSTANTS ---
         const loadingView = document.getElementById('loading-view');
         const appView = document.getElementById('app-view');
         const logoutButton = document.getElementById('logout-button');
@@ -192,206 +172,261 @@ const firebaseConfig = {
         const driverFilter = document.getElementById('driver-filter');
         const statusFilter = document.getElementById('status-filter');
         const loadingState = document.getElementById('loading-state');
+        
+        // State management
+        let currentUser = null;
+        let allParcels = [];
+        let parcelHeaders = [];
+        let unsubscribeParcels = null; // To store the onSnapshot listener
 
-        // --- AUTHENTICATION ---
-        const handleAuthentication = async () => {
-            try {
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Authentication failed:", error);
-                loadingView.innerHTML = `<p class="text-red-600">Authentication failed: ${error.message}</p>`;
-            }
-        };
+        // --- FIREBASE INITIALIZATION & AUTHENTICATION ---
+        try {
+            // Get app ID and Firebase config from environment variables provided by the platform
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                currentUser = user;
-                const userId = user.uid;
-                
-                // Check for or create user profile in Firestore
-                // FIX: Correctly construct the document path with separate arguments
-                const userDocRef = doc(db, 'artifacts', appId, 'users', userId);
-                let userDoc = await getDoc(userDocRef);
-                let userData = { role: 'sorter', createdAt: new Date().toISOString() }; // Default role
+            // Initialize Firebase
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
 
-                if (!userDoc.exists()) {
-                    await setDoc(userDocRef, userData);
-                } else {
-                    userData = userDoc.data();
-                }
-                
-                // Update UI
-                userIdEl.textContent = `User ID: ${userId.substring(0, 12)}...`; // Show partial ID
-                userRoleEl.textContent = userData.role;
-                loadingView.classList.add('hidden');
-                appView.classList.remove('hidden');
+            // --- AUTH STATE LISTENER ---
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    // User is signed in.
+                    currentUser = user;
+                    const userId = user.uid;
+                    
+                    // Get or create user profile in Firestore
+                    const userDocRef = doc(db, 'artifacts', appId, 'users', userId);
+                    let userDoc = await getDoc(userDocRef);
+                    let userData = { role: 'sorter', createdAt: new Date().toISOString() }; // Default role
 
-                // Start listening for parcel data
-                listenForParcels();
-
-            } else {
-                // No user is signed in. Attempt to sign in.
-                handleAuthentication();
-            }
-        });
-
-        logoutButton.addEventListener('click', async () => {
-            await signOut(auth);
-            // The onAuthStateChanged listener will handle the UI switch
-            window.location.reload(); // Easiest way to reset state
-        });
-
-
-        // --- FILE UPLOAD & PROCESSING ---
-        fileUpload.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            fileNameEl.textContent = file.name;
-            uploadStatusEl.innerHTML = `<p class="text-blue-600">Processing file...</p>`;
-
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                try {
-                    const data = new Uint8Array(event.target.result);
-                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
-                    const json_data = XLSX.utils.sheet_to_json(worksheet);
-
-                    if (json_data.length === 0) {
-                        uploadStatusEl.innerHTML = `<p class="text-red-600">File is empty or format is incorrect.</p>`;
-                        return;
+                    if (!userDoc.exists()) {
+                        await setDoc(userDocRef, userData);
+                    } else {
+                        userData = userDoc.data();
                     }
                     
-                    uploadStatusEl.innerHTML = `<p class="text-blue-600">Found ${json_data.length} records. Uploading to database... This may take a moment.</p>`;
+                    // Update UI with user info
+                    userIdEl.textContent = `User: ${userId.substring(0, 12)}...`;
+                    userIdEl.title = `Full User ID: ${userId}`;
+                    userRoleEl.textContent = `Role: ${userData.role}`;
+                    
+                    // Show the main application and hide loading screen
+                    loadingView.classList.add('hidden');
+                    appView.classList.remove('hidden');
 
-                    const batch = writeBatch(db);
-                    let count = 0;
+                    // Start listening for parcel data changes
+                    listenForParcels();
 
-                    json_data.forEach(row => {
-                        const orderSN = row['Shopee Order SN'] || row['Order ID'] || row['SLS Tracking Number'];
-                        if (orderSN) {
-                            const sanitizedRow = Object.fromEntries(
-                                Object.entries(row).map(([key, value]) => [key, String(value)])
-                            );
-                            // FIX: Correctly construct the document path with separate arguments
-                            const parcelRef = doc(db, 'artifacts', appId, 'public', 'data', 'parcels', String(orderSN));
-                            batch.set(parcelRef, sanitizedRow, { merge: true }); // Use merge to be safe
-                            count++;
-                        }
-                    });
+                } else {
+                    // User is signed out. Attempt to sign in.
+                    currentUser = null;
+                    if (unsubscribeParcels) {
+                        unsubscribeParcels(); // Stop listening to old data
+                    }
+                    await handleAuthentication();
+                }
+            });
 
-                    await batch.commit();
-                    uploadStatusEl.innerHTML = `<p class="text-green-600">Successfully uploaded and processed ${count} parcel records.</p>`;
-                
+            // --- AUTHENTICATION HANDLER ---
+            const handleAuthentication = async () => {
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
                 } catch (error) {
-                    console.error("File processing error:", error);
-                    uploadStatusEl.innerHTML = `<p class="text-red-600">Error processing file. Make sure it's a valid Excel/CSV file.</p>`;
-                } finally {
-                    fileUpload.value = ''; 
+                    console.error("Authentication failed:", error);
+                    loadingView.innerHTML = `<p class="text-red-600">Authentication failed: ${error.message}</p>`;
                 }
             };
-            reader.readAsArrayBuffer(file);
-        });
-
-
-        // --- DATA FETCHING & RENDERING ---
-        function listenForParcels() {
-            // FIX: Correctly construct the collection path with separate arguments
-            const parcelsCol = collection(db, 'artifacts', appId, 'public', 'data', 'parcels');
-            onSnapshot(parcelsCol, (snapshot) => {
-                loadingState.classList.add('hidden');
-                allParcels = snapshot.docs.map(doc => doc.data());
-
-                if (allParcels.length > 0) {
-                    parcelHeaders = Object.keys(allParcels[0]).sort(); // Sort headers alphabetically for consistency
-                    renderTableHeaders();
-                    populateStatusFilter();
-                }
-                renderTable();
-            }, (error) => {
-                console.error("Error fetching parcels:", error);
-                loadingState.textContent = "Error loading data. Check permissions.";
-            });
-        }
-
-        function renderTableHeaders() {
-            const thead = parcelTable.querySelector('thead tr');
-            thead.innerHTML = '';
-            parcelHeaders.forEach(header => {
-                const th = document.createElement('th');
-                th.scope = 'col';
-                th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50';
-                th.textContent = header.replace(/_/g, ' ');
-                thead.appendChild(th);
-            });
-        }
-
-        function renderTable() {
-            const tbody = parcelTable.querySelector('tbody');
-            tbody.innerHTML = '';
-
-            const searchVal = searchFilter.value.toLowerCase();
-            const driverVal = driverFilter.value.toLowerCase();
-            const statusVal = statusFilter.value;
-
-            const filteredParcels = allParcels.filter(parcel => {
-                const driverName = (parcel['Driver Name'] || '').toLowerCase();
-                const status = parcel['Status'] || '';
-                const matchesDriver = driverVal ? driverName.includes(driverVal) : true;
-                const matchesStatus = statusVal ? status === statusVal : true;
-                const matchesSearch = searchVal ? Object.values(parcel).some(val => 
-                    String(val).toLowerCase().includes(searchVal)
-                ) : true;
-                return matchesDriver && matchesStatus && matchesSearch;
+            
+            // --- LOGOUT ---
+            logoutButton.addEventListener('click', async () => {
+                await signOut(auth);
+                // onAuthStateChanged will handle the UI change and re-authentication
+                window.location.reload(); // Easiest way to reset all state
             });
 
-            if (filteredParcels.length === 0) {
-                parcelTable.classList.add('hidden');
-                noDataState.classList.remove('hidden');
-            } else {
-                parcelTable.classList.remove('hidden');
-                noDataState.classList.add('hidden');
+            // --- FILE UPLOAD & PROCESSING ---
+            fileUpload.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                fileNameEl.textContent = file.name;
+                uploadStatusEl.innerHTML = `<p class="text-blue-600">Processing file...</p>`;
+
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const data = new Uint8Array(event.target.result);
+                        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        const json_data = XLSX.utils.sheet_to_json(worksheet);
+
+                        if (json_data.length === 0) {
+                            uploadStatusEl.innerHTML = `<p class="text-red-600">File is empty or format is incorrect.</p>`;
+                            return;
+                        }
+                        
+                        uploadStatusEl.innerHTML = `<p class="text-blue-600">Found ${json_data.length} records. Uploading to database... This may take a moment.</p>`;
+
+                        // Use writeBatch for atomic bulk operations
+                        const batch = writeBatch(db);
+                        let count = 0;
+
+                        json_data.forEach(row => {
+                            // Find a unique identifier for the parcel
+                            const orderSN = row['Shopee Order SN'] || row['Order ID'] || row['SLS Tracking Number'] || crypto.randomUUID();
+                            
+                            // Sanitize row data to ensure all values are storable in Firestore
+                            const sanitizedRow = Object.fromEntries(
+                                Object.entries(row).map(([key, value]) => {
+                                    // Sanitize key by removing characters not allowed in Firestore field paths
+                                    const sanitizedKey = key.replace(/[.*[\]]/g, '');
+                                    // Convert value to string to avoid data type issues
+                                    const sanitizedValue = value === null || value === undefined ? '' : String(value);
+                                    return [sanitizedKey, sanitizedValue];
+                                })
+                            );
+
+                            const parcelRef = doc(db, 'artifacts', appId, 'public', 'data', 'parcels', String(orderSN));
+                            batch.set(parcelRef, sanitizedRow, { merge: true }); // Use merge to update/create
+                            count++;
+                        });
+
+                        await batch.commit();
+                        uploadStatusEl.innerHTML = `<p class="text-green-600">Successfully uploaded and processed ${count} parcel records.</p>`;
+                    
+                    } catch (error) {
+                        console.error("File processing error:", error);
+                        uploadStatusEl.innerHTML = `<p class="text-red-600">Error processing file. Make sure it's a valid Excel/CSV file. Details: ${error.message}</p>`;
+                    } finally {
+                        fileUpload.value = ''; // Reset file input
+                        setTimeout(() => {
+                           uploadStatusEl.innerHTML = '';
+                           fileNameEl.textContent = 'No file chosen';
+                        }, 5000);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            });
+
+            // --- DATA FETCHING & RENDERING ---
+            function listenForParcels() {
+                if (unsubscribeParcels) unsubscribeParcels(); // Unsubscribe from previous listener if it exists
+
+                const parcelsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'parcels');
+                unsubscribeParcels = onSnapshot(parcelsColRef, (snapshot) => {
+                    loadingState.classList.add('hidden');
+                    allParcels = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+
+                    if (allParcels.length > 0) {
+                        // Dynamically determine headers from all parcels to be comprehensive
+                        const headersSet = new Set();
+                        allParcels.forEach(p => Object.keys(p).forEach(k => headersSet.add(k)));
+                        parcelHeaders = Array.from(headersSet).sort(); // Sort headers alphabetically
+                        
+                        renderTableHeaders();
+                        populateStatusFilter();
+                    }
+                    renderTable(); // Render table with new data
+                }, (error) => {
+                    console.error("Error fetching parcels:", error);
+                    loadingState.textContent = "Error loading data. Check console for details.";
+                    noDataState.classList.remove('hidden');
+                    noDataState.textContent = "Error loading data. You may not have permission to view this data.";
+                });
             }
 
-            filteredParcels.forEach(parcel => {
-                const tr = document.createElement('tr');
-                tr.className = 'hover:bg-gray-50';
+            function renderTableHeaders() {
+                const thead = parcelTable.querySelector('thead tr');
+                thead.innerHTML = '';
                 parcelHeaders.forEach(header => {
-                    const td = document.createElement('td');
-                    td.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-700';
-                    td.textContent = parcel[header] || 'N/A';
-                    tr.appendChild(td);
+                    if (header === 'id') return; // Don't show the document ID as a column
+                    const th = document.createElement('th');
+                    th.scope = 'col';
+                    th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50';
+                    th.textContent = header.replace(/_/g, ' ');
+                    thead.appendChild(th);
                 });
-                tbody.appendChild(tr);
-            });
-        }
-        
-        function populateStatusFilter() {
-            if (allParcels.length === 0) return;
-            const statuses = [...new Set(allParcels.map(p => p.Status).filter(Boolean))];
-            statuses.sort();
-            const currentVal = statusFilter.value;
-            statusFilter.innerHTML = '<option value="">All Statuses</option>';
-            statuses.forEach(status => {
-                const option = document.createElement('option');
-                option.value = status;
-                option.textContent = status;
-                statusFilter.appendChild(option);
-            });
-            statusFilter.value = currentVal;
-        }
+            }
 
-        // --- EVENT LISTENERS FOR FILTERS ---
-        searchFilter.addEventListener('input', renderTable);
-        driverFilter.addEventListener('input', renderTable);
-        statusFilter.addEventListener('change', renderTable);
+            function renderTable() {
+                const tbody = parcelTable.querySelector('tbody');
+                tbody.innerHTML = '';
 
+                const searchVal = searchFilter.value.toLowerCase();
+                const driverVal = driverFilter.value.toLowerCase();
+                const statusVal = statusFilter.value;
+
+                const filteredParcels = allParcels.filter(parcel => {
+                    const driverName = (parcel['Driver Name'] || '').toLowerCase();
+                    const status = parcel['Status'] || '';
+                    
+                    const matchesDriver = driverVal ? driverName.includes(driverVal) : true;
+                    const matchesStatus = statusVal ? status === statusVal : true;
+                    const matchesSearch = searchVal ? Object.values(parcel).some(val => 
+                        String(val).toLowerCase().includes(searchVal)
+                    ) : true;
+                    
+                    return matchesDriver && matchesStatus && matchesSearch;
+                });
+
+                if (filteredParcels.length === 0) {
+                    parcelTable.classList.add('hidden');
+                    noDataState.classList.remove('hidden');
+                    noDataState.textContent = allParcels.length > 0 ? "No parcels match your current filters." : "No parcels found. Try uploading a file.";
+                } else {
+                    parcelTable.classList.remove('hidden');
+                    noDataState.classList.add('hidden');
+                }
+
+                filteredParcels.forEach(parcel => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-orange-50 transition-colors duration-150';
+                    parcelHeaders.forEach(header => {
+                        if (header === 'id') return; // Don't render the ID cell
+                        const td = document.createElement('td');
+                        td.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-700';
+                        td.textContent = parcel[header] || 'N/A';
+                        tr.appendChild(td);
+                    });
+                    tbody.appendChild(tr);
+                });
+            }
+            
+            function populateStatusFilter() {
+                if (allParcels.length === 0 || !parcelHeaders.includes('Status')) return;
+                
+                const statuses = [...new Set(allParcels.map(p => p.Status).filter(Boolean))];
+                statuses.sort();
+                
+                const currentVal = statusFilter.value;
+                statusFilter.innerHTML = '<option value="">All Statuses</option>';
+                statuses.forEach(status => {
+                    const option = document.createElement('option');
+                    option.value = status;
+                    option.textContent = status;
+                    statusFilter.appendChild(option);
+                });
+                statusFilter.value = currentVal;
+            }
+
+            // --- EVENT LISTENERS FOR FILTERS ---
+            searchFilter.addEventListener('input', renderTable);
+            driverFilter.addEventListener('input', renderTable);
+            statusFilter.addEventListener('change', renderTable);
+
+        } catch (e) {
+            console.error("Fatal Error: Firebase initialization failed.", e);
+            loadingView.innerHTML = '<p class="text-red-600 font-bold">Error: Could not initialize the system. Please check the console for details and ensure Firebase configuration is correct.</p>';
+        }
     </script>
 </body>
 </html>
