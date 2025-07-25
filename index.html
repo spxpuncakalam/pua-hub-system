@@ -183,8 +183,14 @@
         try {
             // Get app ID and Firebase config from environment variables provided by the platform
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
             const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+            if (!firebaseConfigStr) {
+                 throw new Error("Firebase configuration is missing. The application cannot start.");
+            }
+
+            const firebaseConfig = JSON.parse(firebaseConfigStr);
 
             // Initialize Firebase
             const app = initializeApp(firebaseConfig);
@@ -425,8 +431,8 @@
             statusFilter.addEventListener('change', renderTable);
 
         } catch (e) {
-            console.error("Fatal Error: Firebase initialization failed.", e);
-            loadingView.innerHTML = '<p class="text-red-600 font-bold">Error: Could not initialize the system. Please check the console for details and ensure Firebase configuration is correct.</p>';
+            console.error("Fatal Error:", e.message);
+            loadingView.innerHTML = `<p class="text-red-600 font-bold">${e.message}</p>`;
         }
     </script>
 </body>
