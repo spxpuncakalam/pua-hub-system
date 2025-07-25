@@ -182,12 +182,22 @@
         // --- FIREBASE INITIALIZATION & AUTHENTICATION ---
         try {
             // Get app ID and Firebase config from environment variables provided by the platform
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+            let appId = typeof __app_id !== 'undefined' ? __app_id : 'github-pages-app'; // Default appId for GitHub Pages
+            let firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
             const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
+            // If firebaseConfig is not provided by the environment, use a hardcoded one for GitHub Pages.
             if (!firebaseConfigStr) {
-                 throw new Error("Firebase configuration is missing. The application cannot start.");
+                console.warn("Firebase configuration not found in environment. Using hardcoded configuration for GitHub Pages.");
+                firebaseConfigStr = JSON.stringify({
+                    apiKey: "AIzaSyABPOtifWKQaera7AragOseptGw_-CnFJA",
+                    authDomain: "spx-puncak-alam-hub.firebaseapp.com",
+                    projectId: "spx-puncak-alam-hub",
+                    storageBucket: "spx-puncak-alam-hub.firebasestorage.app",
+                    messagingSenderId: "893783079973",
+                    appId: "1:893783079973:web:8a09df2ee640c02a3d93cc",
+                    measurementId: "G-24041L1LWL"
+                });
             }
 
             const firebaseConfig = JSON.parse(firebaseConfigStr);
@@ -208,7 +218,7 @@
                     }
                 } catch (error) {
                     console.error("Authentication failed:", error);
-                    loadingView.innerHTML = `<p class="text-red-600">Authentication failed: ${error.message}</p>`;
+                    loadingView.innerHTML = `<p class="text-red-600">Authentication failed: ${error.message}. Check your Firebase configuration and security rules.</p>`;
                 }
             };
 
@@ -225,7 +235,11 @@
                     let userData = { role: 'sorter', createdAt: new Date().toISOString() }; // Default role
 
                     if (!userDoc.exists()) {
-                        await setDoc(userDocRef, userData);
+                        try {
+                            await setDoc(userDocRef, userData);
+                        } catch (e) {
+                            console.error("Error creating user profile:", e);
+                        }
                     } else {
                         userData = userDoc.data();
                     }
